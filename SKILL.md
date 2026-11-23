@@ -95,6 +95,47 @@ this screen (don't mix patterns within one screen):
 | **Reflow** | No natural split exists, but the content is a single vertical stack that has room to breathe | The same vertical stack becomes a **two-column layout** (e.g. a form's fields, a settings list, a grid that was 2-wide becomes 3–4-wide) — same content, same order, just re-flowed into the extra width. |
 | **Tab-as-Sidebar** | This screen owns the app's tab bar and the screen is information-dense | Convert the tab bar to a **sidebar** (`defaultTabBarPlacement(.sidebar)` / `tabBarController.sidebar`) instead of leaving it bottom-aligned. |
 
+**Before splitting two things side-by-side, check whether either one is an
+inherently wide, horizontally-scrolling component** (a chip/pill row, a card
+carousel) that was sized to fill its *original* full-width container. Squeezing it
+into a half-width split column doesn't make it responsive — the chips just overflow
+and clip past the narrower edge, invisible unless someone scrolls, which reads as
+broken on a static design surface. A row of N chips/pills needs roughly their
+summed width (plus gaps) to display without clipping; if that exceeds the split
+column's width, don't force the split — stack that section full-width instead
+(this is just Reflow, not a failure — "Choose your role" as a full-width chip row
+above "Choose a shift" as its own full-width section is a legitimate, deliberate
+layout, not a fallback). Caught on a real build: a Role chip row forced into a
+~348pt split column clipped its last chip; the fix was reverting that one pairing
+to stacked full-width sections while keeping genuine Split View everywhere else it
+still fit.
+
+**A bottom footer with two or more stacked buttons (mobile-width forced them
+vertical) should usually go side-by-side on Inner**, not stay stacked-but-centered
+and not stretch full-width either — each button fills an equal share of the footer
+row (primary filled, secondary ghost/outline, ordered the same as the mobile stack
+top-to-bottom becomes leading-to-trailing). This earns the width without the
+"stretched into an oversized pill" problem a single stretched button can avoid but
+multiple stacked ones can't. Confirmed on a real build: a "View my request" +
+"Back to home" footer, originally stacked because mobile had no room, became two
+buttons side-by-side spanning the full inner width with standard margins — reads
+as a deliberately-designed footer, not a padded leftover.
+
+**Don't double-margin a content block that already paddings itself.** A `Body`/
+`Sheet`-style container is often already built with its own internal left/right
+padding (e.g. 20pt each side — check `paddingLeft`/`paddingRight` before assuming).
+If you then *also* shrink that block to a narrower width and center it in the wider
+frame (to "not stretch it full width"), you've added a second margin on top of the
+one it already has — the content ends up with double the intended margin and
+visibly doesn't reach the screen edge the way every other full-bleed chrome row
+does. The fix: resize that block to the **full** inner width and let its own
+built-in padding be the only margin — don't add external centering on top of a
+component that already insets itself. Caught on a real build (twice, independently,
+across two different flows) after the user pointed at the gap and said the content
+should fill the screen.
+
+**Anti-pattern — don't default to "widen the frame, center the content."** Just adding side margins and centering the existing mobile layout is not one of the three patterns above, and it reads as mobile-design-with-padding, not a screen that earns the wider canvas — confirmed the hard way on a real build where exactly this got rejected on sight. Before falling back to a merely-wider centered column, actively look for *something* to pair it with: two sequential steps/pickers that could show together (Split View), a recap/summary that exists elsewhere in the same flow and could sit alongside this content for context (also Split View — reusing real existing content, not inventing new copy), or a list/grid that can reflow. Only use a wider centered column as the last resort when no real pairing or reflow exists at all, and even then prefer widening to a *comfortable reading measure*, not an arbitrary "same content, more margin" center job.
+
 Inner-display specifics regardless of pattern:
 - **All toolbar/nav items go back to standard horizontal bars** — the vertical side
   strip is an outer-display-only device. Portrait and landscape both use horizontal
@@ -130,6 +171,37 @@ Before calling the conversion done, check:
   reserved region?
 - Does long/localized text or the largest Dynamic Type size still fit without
   clipping, on the outer display specifically (it's the tight constraint)?
+
+## Frame height — hug content, but floor it at the real device height
+
+A screen's frame should **hug its true content height** (a long scrolling screen
+shows its real height, not get clipped to a fixed viewport) but never go *shorter*
+than the real device's screen height — a sparse screen (an empty state, a short
+confirmation screen) still needs to read as a full phone screen, not shrink-wrap
+into something stubby that obviously isn't a real device.
+
+Known real logical-point screen heights (derived from Apple's own App Store
+screenshot pixel requirements — 1398×2034 outer / 2007×2853 inner, both @3x, see
+the reference file): **Outer floor 678pt, Inner floor 951pt.** Use these as the
+minimum regardless of what width convention the project itself uses (most existing
+iOS screen libraries have their own established screen width, e.g. 393pt — don't
+force the width to match 466/669, only floor the *height*).
+
+- **If the screen's root frame is genuine Figma auto-layout** (`primaryAxisSizingMode:
+  'AUTO'` and hugging): set `frame.minHeight = 678` (or `951`) directly — Figma's
+  native hug-with-floor behavior does the rest.
+- **If the screen's root frame is `layoutMode: 'NONE'`** (absolute-positioned
+  children — common when the "screen" frame just contains a scrollable content
+  child plus floating chrome like a tab bar or home indicator): `minHeight` does
+  nothing on a NONE-layout frame, since it never auto-sizes in the first place.
+  Compute the floor yourself: read the real settled height of the scrollable
+  content child in a **separate** tool call (reading height in the same script
+  that just changed the layout can return a stale pre-reflow value — a known Figma
+  plugin-API gotcha), then `frame.resize(frame.width, Math.max(trueContentHeight,
+  deviceMinHeight))`. Afterward, re-anchor any floating bottom chrome (tab bar,
+  home indicator) using the screen's *own* original bottom-margin convention
+  (measure it from an untouched source screen — don't assume a number), not
+  whatever absolute position it happened to be left at.
 
 ## Step 6 — Produce the output
 
