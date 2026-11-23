@@ -17,6 +17,7 @@ first foldable iPhone, not Duo Mobile (2FA) or Duolingo.
 | App Store screenshot sizes | 1398×2034px (outer), 2007×2853px (inner) |
 | Screenshot requirement deadline | Mandatory from **April 2027** |
 | Poses | Flat (fully open, tablet-like), partially folded / book mode, tent/edge-standing, closed |
+| Derived logical-point screen size | **Outer 466×678pt, Inner 669×951pt** — back-calculated from the App Store screenshot pixel sizes above at an assumed @3x scale (both divide evenly: 1398/3=466, 2034/3=678, 2007/3=669, 2853/3=951). Not an official Apple-published number, just the cleanest consistent read of the screenshot spec — re-derive/confirm if Apple publishes an explicit points table later. Used as the minimum-height floor for screen frames (see `SKILL.md`'s "Frame height" section) even in projects whose own screen-width convention differs from 466/669. |
 
 ## Size classes (the only two you design for)
 
