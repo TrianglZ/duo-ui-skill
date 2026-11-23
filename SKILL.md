@@ -54,7 +54,30 @@ the rest of this skill tells you what happens to each bucket:
 7. **Full-bleed/background art** — hero images, gradient headers, non-interactive
    backgrounds.
 
-## Step 3 — Build the outer-display version
+## Step 3 — Clone the source screens first, then convert the clones
+
+Before any Outer/Inner editing starts, **clone the full set of source screens for
+this flow/sub-flow into the target section as plain, unmodified duplicates** — don't
+build the Outer/Inner structure "fresh" by hand, and don't transform a reference to
+the original source node in place. Two-phase process, always in this order:
+
+1. **Clone phase**: duplicate every screen this pass covers into the target
+   section (matching the source's own nesting — a flat flow stays flat, a flow
+   with nested sub-sections gets nested sub-sections, don't flatten it into
+   text-labeled rows as a substitute for real structure). Re-read the result
+   (node count/names) to confirm the clones actually landed before moving on —
+   don't trust a script's own reported success.
+2. **Convert phase**: only once the clones exist do you start transforming them
+   into Outer/Inner pairs per Steps 4–7 below — duplicate each clone once more
+   into its Outer and Inner copy, then edit those two in place.
+
+This matters most on multi-screen flows: cloning the whole batch first means a
+mid-build structural correction (e.g., discovering the grouping should be
+SECTION-in-SECTION, not flat rows with labels) costs you a delete-and-reclone, not
+hand-reconstructed content too — caught on a real build where a flat first attempt
+had to be thrown away and rebuilt nested once the real source structure was checked.
+
+## Step 4 — Build the outer-display version
 
 The outer display is compact-width — treat this as "the normal iPhone screen,
 corrected," not a from-scratch design:
@@ -83,7 +106,7 @@ corrected," not a from-scratch design:
   the outer display is narrow enough that long labels must reflow (wrap, truncate
   gracefully, or drop to a secondary line), never clip or push off-screen.
 
-## Step 4 — Build the inner-display version
+## Step 5 — Build the inner-display version
 
 The inner display is regular-width/regular-height — this is where the real
 "Duo-ness" of the conversion happens. Pick exactly one of these three patterns for
@@ -156,7 +179,7 @@ Inner-display specifics regardless of pattern:
   hardcoding a margin — the active set changes with pose (e.g. inner camera only
   matters mid-video-call).
 
-## Step 5 — Reconcile the two versions
+## Step 6 — Reconcile the two versions
 
 Before calling the conversion done, check:
 
@@ -203,7 +226,7 @@ force the width to match 466/669, only floor the *height*).
   (measure it from an untouched source screen — don't assume a number), not
   whatever absolute position it happened to be left at.
 
-## Step 6 — Produce the output
+## Step 7 — Produce the output
 
 - **In Figma**: create (or duplicate into) two frames per screen, clearly named
   `<Screen name> – Outer` and `<Screen name> – Inner`, sized to the outer/inner
@@ -217,7 +240,7 @@ force the width to match 466/669, only floor the *height*).
   class checks, `ReservedRegion`/`UIView.ReservedRegion` queries, Arrangement/
   NavigationSplitView containers) — never as a device-identity branch.
 - Always state which of the three inner-display patterns (Split View / Reflow /
-  Tab-as-Sidebar) you chose and why, and call out anything from Step 5's checklist
+  Tab-as-Sidebar) you chose and why, and call out anything from Step 6's checklist
   that couldn't be fully resolved, rather than silently shipping a partial
   conversion.
 
@@ -228,7 +251,7 @@ force the width to match 466/669, only floor the *height*).
 | Nav/toolbar icon buttons | Vertical side strip (right edge) | Standard horizontal bar |
 | Text buttons / segmented controls | Stay horizontal | Stay horizontal |
 | Tab bar | Bottom-aligned | Bottom-aligned, *or* sidebar if info-dense |
-| Primary content | Inset from side strip (or full-width if immersive/static) | Split/Reflow/Sidebar pattern — see Step 4 |
+| Primary content | Inset from side strip (or full-width if immersive/static) | Split/Reflow/Sidebar pattern — see Step 5 |
 | Secondary/detail content | Separate screen (push/present) | Shown alongside primary (Split View) |
 | Sheets/alerts | Controls move to side strip (or opt out for single-button) | Standard horizontal bar |
 | Grid/list density | Same as a normal iPhone screen | Reflows to more columns/wider cards |
