@@ -77,6 +77,31 @@ SECTION-in-SECTION, not flat rows with labels) costs you a delete-and-reclone, n
 hand-reconstructed content too — caught on a real build where a flat first attempt
 had to be thrown away and rebuilt nested once the real source structure was checked.
 
+**Critical gotcha when the target is a nested SECTION (SECTION-in-SECTION): child
+coordinates are parent-relative, not page-absolute, and this is easy to get wrong
+exactly once you nest two levels deep.** A section that's a *direct* child of the
+page has `node.x`/`node.y` equal to its true page position (no parent offset to
+account for), which can quietly condition you into treating `section.x` as "the
+page-absolute left edge" everywhere you use it. That assumption silently breaks the
+moment you create a SECTION *inside* another SECTION: the nested section's own
+`x`/`y` — and everything positioned relative to it — are relative to **its own
+parent section**, not the page. Positioning a nested section at `parentSection.x +
+120` (treating `parentSection.x` as page-absolute, which it is) and then positioning
+*its* children at `nestedSection.x + 60` (now wrongly treating the nested section's
+own `.x` as page-absolute too) double-counts the offset — the nested section ends up
+positioned at `parentSection.x` points to the *right* of where it should be, and
+every screen inside it compounds a second time on top of that. The visible symptom
+is exactly what it sounds like from the outside: the nested section's own container
+looks empty, and the real content renders as a disconnected island far to the right,
+which reads as "a huge gap" when you screenshot the page — caught on a real build via
+a user-reported visual gap that `node.x` reads alone didn't reveal (`.x` was
+internally self-consistent and looked fine); comparing `node.x` against
+`node.absoluteBoundingBox.x` on the nested section is what actually exposed it; a
+mismatch between those two numbers for a nested section is diagnostic of this bug.
+**Before positioning a nested section's children, always compute the local offset
+you actually want (e.g. `120`, not `parentSection.x + 120`)** — only a section that
+is a *direct child of the page* gets to treat its own `.x` as page-absolute.
+
 ## Step 4 — Build the outer-display version
 
 The outer display is compact-width — treat this as "the normal iPhone screen,
@@ -100,8 +125,24 @@ corrected," not a from-scratch design:
 - **Secondary/contextual content** from Step 2 bucket 5: does **not** appear here —
   push to it via normal navigation (push/present), same as a standard iPhone screen.
   The outer display shows one hierarchy level at a time.
-- **Transient surfaces**: sheets/alerts/menus default to moving their controls into
-  the side strip too; a single-button sheet may opt to keep a horizontal bar instead.
+- **Transient surfaces (sheets/alerts/menus) — confirmed by Apple, not just inferred.**
+  Apple's own quote: "By default, outer-display sheets present vertically, and
+  inner-display sheets are centered" (the real APIs are `presentationPlacement(_:)` in
+  SwiftUI / `preferredPlacement` in UIKit for the inner-display placement, and
+  `toolbarVerticalBehavior(_:)` / `preferredVerticalBarBehavior` to opt a sheet's own
+  toolbar out of the vertical treatment — these are real, documented APIs, cross-check
+  before trusting a *different* set of API names from a casual source). Concretely:
+  a sheet/modal's **own internal** close/cancel control — separate from the screen's
+  own nav bar — also moves to a floating vertical position on Outer (don't just
+  convert the screen-level nav and leave a sheet's internal horizontal header
+  untouched — a real build did exactly that and missed it on a QR check-in bottom
+  sheet until caught). Detach the control from the sheet's header row, float it
+  above/beside the sheet over the dimmed scrim at the same side-margin used by other
+  floating icon buttons, and left-align whatever remains in the header (same
+  remove-the-balance-spacer pattern as any other icon extraction). A single-button
+  sheet may still opt to keep a horizontal bar instead, matching `toolbarVerticalBehavior`.
+- See **Step 5's "Sheets stay centered on Inner"** note below for how the same
+  surface should look once widened.
 - **Typography**: keep the same type scale, but check Large/AX Dynamic Type sizes —
   the outer display is narrow enough that long labels must reflow (wrap, truncate
   gracefully, or drop to a secondary line), never clip or push off-screen.
@@ -117,6 +158,41 @@ this screen (don't mix patterns within one screen):
 | **Split View** | Bucket 4 (primary) has a natural bucket-5 companion (list↔detail, inbox↔composer, dashboard↔drill-down) | Show both simultaneously side-by-side via an **Arrangement (split style)** or `NavigationSplitView`/`UISplitViewController`. Preserve navigation history across fold/unfold automatically. |
 | **Reflow** | No natural split exists, but the content is a single vertical stack that has room to breathe | The same vertical stack becomes a **two-column layout** (e.g. a form's fields, a settings list, a grid that was 2-wide becomes 3–4-wide) — same content, same order, just re-flowed into the extra width. |
 | **Tab-as-Sidebar** | This screen owns the app's tab bar and the screen is information-dense | Convert the tab bar to a **sidebar** (`defaultTabBarPlacement(.sidebar)` / `tabBarController.sidebar`) instead of leaving it bottom-aligned. |
+
+**Tab-pair merge — when the source screen owns its own in-screen tab/segmented
+control** (e.g. a "My shift / Event info" toggle that swaps the content below it —
+not the app's bottom tab bar, that's the separate Tab-as-Sidebar case), that control
+is itself the trigger for a specific Split View variant, and skipping this
+recognition is a confirmed real-build failure mode (a from-scratch rebuild defaulted
+to a plain single-source Split View and came out visibly worse than the flow that
+originated this pattern — caught by the user comparing the two side by side). When
+you see this control:
+
+1. **Each tab state gets its own real Outer.** Don't synthesize a tab's content by
+   grabbing just its content block — find or build that tab's own full source
+   screen (Hero/Content/Sheet, the works) and convert it to a normal Outer, same as
+   any other screen. If a later tab's content lives only as a shared panel reused
+   elsewhere in the file (not duplicated per state), that's fine — reuse it, but
+   still produce a full Outer conversion of it, not a bare content fragment.
+2. **Row layout is `[Outer tab 1][Outer tab 2]…[Inner merged]`, left to right in tab
+   order — never the default `[Outer][Inner]`.** The per-tab Outers function as
+   reference columns: a reader can trace "this Outer's content → this half of the
+   merged Inner" directly, left to right, without scrolling. Position them at the
+   same standard offsets used elsewhere in the file for multi-column rows (e.g. 393pt
+   Outer, ~40pt gap, next 393pt Outer, ~140pt gap, then the 760pt Inner) — don't
+   collapse straight to a 2-column row just because the easier path only needed one
+   source screen.
+3. **Shared chrome renders once in the merged Inner — never once per column.** Any
+   element identical across every tab (hero image, title block, sticky CTA bar, home
+   indicator) stays outside the split row and renders a single time. Only each tab's
+   *unique* content goes inside its own column.
+4. **The tab control itself is deleted from the merged Inner, not kept per column.**
+   It's redundant once both panels are visible at once — replace it with a plain
+   text header per column (reusing each tab's own label, e.g. "My shift" / "Event
+   info" as a static heading, not a segmented control). Two columns each still
+   showing their own live segmented-control instance (one toggled left, one toggled
+   right) is the single most common tell that this step was skipped — check for it
+   specifically before calling an Inner done.
 
 **Before splitting two things side-by-side, check whether either one is an
 inherently wide, horizontally-scrolling component** (a chip/pill row, a card
@@ -144,6 +220,34 @@ multiple stacked ones can't. Confirmed on a real build: a "View my request" +
 buttons side-by-side spanning the full inner width with standard margins — reads
 as a deliberately-designed footer, not a padded leftover.
 
+**MANDATORY, not optional: appending a button to an existing multi-button footer
+must be verified with a genuinely separate follow-up read, every time — this exact
+bug has slipped through on three different builds despite "fixing" it each time.**
+Appending a new FILL button to an *already-existing* auto-layout bar (e.g. adding
+"Leave event" next to a screen's own primary action) reliably balloons the bar to
+the sum of the buttons' natural widths (a tell-tale wrong number like `1127` instead
+of `760`, with buttons at a wrong share like `535.5` instead of `352`) — and setting
+`resize()` + `primaryAxisSizingMode = 'FIXED'` + per-button `layoutSizingHorizontal =
+'FILL'` *in the same script* that did the appending does not reliably prevent this,
+even though reading the bar's width back at the end of that same script often
+reports the correct number. The in-script report cannot be trusted here — it has
+reported success while the real, settled value was still wrong. **The only
+verification that has actually caught this: a brand-new, independent `use_figma`/
+`figma_execute` call, after the build script has fully returned, that re-reads
+`bar.width` and each button's width from scratch.** Do this for every screen where
+a button was appended to a pre-existing bar (fresh bars you build from scratch, like
+a lone "Leave event" bar with no pre-existing sibling, are not subject to this and
+don't need the extra pass) — not just the first screen of a batch, every one,
+because the bug has appeared on some screens in a batch and not others with no
+predictable pattern. If the independent read shows the wrong width, fix it with yet
+another separate script (re-apply `resize()` + `primaryAxisSizingMode = 'FIXED'`
+immediately after the FILL-assignment loop, inside that new script, then it holds)
+— don't just re-run the original build script, which reintroduces the same
+in-script-report-lies-to-you problem. Treat "I called the fix function" and "I
+confirmed the fix independently" as two separate, both-required steps — this is the
+concrete instance of Rule 5 (figma-use skill) that's actually bitten this project
+repeatedly, so don't let "the return value looked right" substitute for it.
+
 **Don't double-margin a content block that already paddings itself.** A `Body`/
 `Sheet`-style container is often already built with its own internal left/right
 padding (e.g. 20pt each side — check `paddingLeft`/`paddingRight` before assuming).
@@ -158,6 +262,36 @@ across two different flows) after the user pointed at the gap and said the conte
 should fill the screen.
 
 **Anti-pattern — don't default to "widen the frame, center the content."** Just adding side margins and centering the existing mobile layout is not one of the three patterns above, and it reads as mobile-design-with-padding, not a screen that earns the wider canvas — confirmed the hard way on a real build where exactly this got rejected on sight. Before falling back to a merely-wider centered column, actively look for *something* to pair it with: two sequential steps/pickers that could show together (Split View), a recap/summary that exists elsewhere in the same flow and could sit alongside this content for context (also Split View — reusing real existing content, not inventing new copy), or a list/grid that can reflow. Only use a wider centered column as the last resort when no real pairing or reflow exists at all, and even then prefer widening to a *comfortable reading measure*, not an arbitrary "same content, more margin" center job.
+
+**Sheets stay centered on Inner — this is the one deliberate, Apple-confirmed exception to
+the anti-pattern above, not a violation of it.** A sheet/modal (bottom sheet, form sheet,
+action sheet) is not page content and doesn't need a Split View or Reflow pairing — Apple's
+own default for the inner display is a centered sheet at its natural/default size over a
+dimmed background, keeping its normal horizontal toolbar (Cancel/Close leading, Done
+trailing), same as the closest documented analogue (iPadOS: "prefer the page or form sheet
+presentation styles... centering its content on top of a dimmed background view"). Don't
+stretch a sheet's content to fill the full inner width and don't force it into a split
+column — resize only the scrim/background behind it to the full new width/height, keep the
+sheet itself at its own natural width, and recenter it. (Apple does let a sheet dock to one
+side instead — `presentationPlacement(.leading/.trailing)` — but centered is the default
+and the safe choice absent a specific reason to dock it.)
+
+**The sheet's own shape changes too, not just its position — it becomes a floating card,
+not a bottom sheet.** A source screen's bottom sheet (flat bottom edge flush with the screen,
+rounded top corners only, a drag grabber, anchored to the bottom) is a *compact-width*
+shape — on Inner it should convert into a form-sheet-style floating card confirmed against
+a real Apple reference screenshot (an "Animal Encounters" sample app sheet,
+`presentationPlacement`-driven): **round all four corners** (not just the top two), **give it
+margin on every side** — vertically centered or at least clearly off both the top and bottom
+edges, never still flush to the bottom — and **remove the grabber** (a floating card isn't
+drag-resizable the way a bottom sheet is; if the grabber stays, the shape reads as "a bottom
+sheet that got recentered," not a real floating dialog). The close button floats
+**overlapping the card's own top-right corner** (half on/half off the card, over the dimmed
+scrim behind it) rather than sitting inline inside the card's header row — this is a
+different detail from the *outer*-display vertical-sheet-control rule above (there the close
+button floats separately beside the whole sheet; here it floats on the card's own corner).
+Width stays at the sheet's own natural/compact width — don't stretch it just because there's
+more canvas.
 
 Inner-display specifics regardless of pattern:
 - **All toolbar/nav items go back to standard horizontal bars** — the vertical side
@@ -243,6 +377,52 @@ force the width to match 466/669, only floor the *height*).
   Tab-as-Sidebar) you chose and why, and call out anything from Step 6's checklist
   that couldn't be fully resolved, rather than silently shipping a partial
   conversion.
+
+## Step 8 — Mandatory verification checklist (run per screen, every time — not a one-off sanity check at the end)
+
+This step exists because every item below is a *specific, already-happened* failure
+on this project, each one previously treated as "fixed" after a single correction,
+then repeated on a later screen or a later flow. None of these are optional, and
+none of them are satisfied by a build script's own returned values — every one
+requires a **separate, independent `use_figma`/`figma_execute` call issued after the
+build script has fully returned**, not a check written into the same script that did
+the building. If you skip the independent call and only trust the build script's own
+report, you have not actually run this checklist, no matter how confident the report
+looked.
+
+1. **Sticky-bar / multi-button footer width.** Any screen where a button was
+   *appended* to a pre-existing bar (not a bar built fresh from scratch): independently
+   re-read `bar.width` and every button's width. Expect the bar at the Inner's full
+   content width (e.g. 760) and buttons at an equal share — a bar width equal to the
+   sum of the buttons' natural widths (plus padding/gap) means it reverted. Confirmed
+   recurring on three separate builds despite an in-script fix each time.
+2. **Orphan/duplicate nodes.** After any script that crashed, was retried, or ran a
+   placeholder/test call against real IDs: list the target section's children by
+   name and look for near-duplicate names or a frame positioned at an obviously
+   wrong coordinate (e.g. `y: 0` when every real row starts past `y: 200`) — a
+   crash-then-retry reuses the same staging input and silently leaves a half-built
+   orphan behind.
+3. **Nested-section coordinates.** Any time a SECTION is created *inside another
+   SECTION* (not a direct child of the page): compare `nestedSection.x` against
+   `nestedSection.absoluteBoundingBox.x`. If `absoluteBoundingBox.x` is larger by
+   roughly the parent section's own `.x`, every child inside is double-offset — fix
+   by computing the small intended local offset, not `parentSection.x + offset`.
+4. **Shared-chrome duplication inside a merged Inner.** For every tab-pair-merge
+   screen: confirm there is exactly **one** `Title Block` in the Inner's `Sheet` (not
+   one per column) and **zero** live `Tabs` segmented-control instances (replaced by
+   plain text headers). A screenshot showing two visually-identical header/tab
+   rows side by side is the same miss every time.
+5. **Label position validity.** After changing any label's font size (which changes
+   its height): confirm `label.y` was recomputed from the new height against the row
+   it sits above (`rowY - gap - newHeight`), not left at a stale offset computed for
+   the old, shorter height — and confirm `label.x` actually matches the row's `x`,
+   not a few points off from an earlier coordinate fix's rounding.
+
+Do all five for every screen/row a build or fix pass touches — not just the first
+one in a batch, and not just once at the end of a whole flow. A batch of otherwise-
+identical screens has, in practice, had some pass and some fail the same check with
+no predictable pattern, so partial-batch verification (spot-checking the first row
+and assuming the rest match) is not sufficient.
 
 ## Quick reference — what moves vs. what stays
 
