@@ -476,7 +476,17 @@ identical screens has, in practice, had some pass and some fail the same check w
 no predictable pattern, so partial-batch verification (spot-checking the first row
 and assuming the rest match) is not sufficient.
 
-6. **Floating-icon color after extraction.** When an icon-only nav control is pulled
+6a. **Background fill on any freshly-created (not cloned) merged-Inner frame.**
+   Independently re-read `frame.fills` and `Content.fills` — the frame must carry
+   the project's real bound background variable (not white), and `Content` must be
+   empty/transparent (`fills: []`) so the frame's background actually shows through.
+6b. **Phantom bottom padding on a column repurposed from absolute-overlay layout.**
+   If a List/Detail Column (or any cloned Content) now holds its Composer/footer as
+   a real flex child rather than an absolute overlay, independently re-read its
+   `paddingBottom` — a nonzero value inherited from the original absolute-layout
+   source produces a dead-space gap and must be zeroed, then the column/frame/
+   Home-Indicator height re-derived from the corrected (shorter) measurement.
+7. **Floating-icon color after extraction.** When an icon-only nav control is pulled
    out of a non-standard-colored context (a dark/full-bleed screen like a media
    viewer, where the icon was originally white-on-dark) into the project's standard
    floating circle (white background), its vector fill must be explicitly recolored
@@ -486,6 +496,38 @@ and assuming the rest match) is not sufficient.
    caught by screenshot and manually recolored. Re-screenshot after floating any icon
    from a non-standard context and confirm it's actually visible, don't assume the
    clone looks right.
+
+**Named rule — a freshly-created merged-Inner frame needs its background explicitly
+matched to the source screen's real background fill, never left at Figma's default.**
+`figma.createFrame()` defaults to opaque white. Every real screen in this project
+has its own top-level frame filled with a bound color variable (e.g. "Surface Dim",
+a light lavender, not white) — when a merged Inner is built fresh (not cloned from
+a pristine source, the way Outers usually are), that fill must be copied/bound
+explicitly, and the **`Content` child's own fill must be cleared** (`fills = []`) —
+a leftover or default opaque fill on `Content` sits on top of the frame's
+background and hides it completely even after the frame's own fill is fixed.
+Confirmed on a real build: 10 freshly-built merged-Inner frames in the Chat flow
+all rendered pure white instead of the house lavender background, caught only when
+the user pointed it out directly — the bug was invisible in isolation because white
+looks like a plausible background until compared against a sibling screen.
+
+**Named rule — clear inherited bottom padding when moving content from
+absolute-overlay layout into real flex-column layout.** A pristine source screen's
+`Content` frame is often `layoutMode: NONE` with a sibling `Composer`/sticky-bar
+that's absolutely positioned *overlapping* Content's own reserved bottom padding
+(e.g. `paddingBottom: 96–140`, sized to leave blank space for the floating
+Composer). That reserved padding is correct in the *original* absolute-layout
+context. But once that same Content (or a clone of it) is repurposed as a List/
+Detail **Column** inside a merged Inner's `Duo Split Row` — where Composer becomes
+a REAL in-flow flex child instead of an absolute overlay — the old paddingBottom is
+now redundant and produces a large dead-space gap at the bottom of that column,
+making the whole split look "not centered" / unbalanced against its sibling column.
+**Always zero out `paddingBottom` (and check `paddingTop`) on a cloned Content/
+column frame whose composer/footer is now a real flex child, not an absolute
+overlay** — don't assume the inherited padding is harmless just because the column
+still "hugs" correctly; AUTO sizing honors stale padding same as real content.
+Re-measure column height after clearing it and re-float the frame/Home-Indicator/
+floating-card position from the corrected height, not the original.
 
 **Named rule — MAX-constrained children double-shift on `resize()`, don't compound it.**
 Any child with `constraints.vertical === 'MAX'` (a sticky bottom bar, composer, home
