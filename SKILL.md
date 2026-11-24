@@ -339,10 +339,17 @@ into something stubby that obviously isn't a real device.
 
 Known real logical-point screen heights (derived from Apple's own App Store
 screenshot pixel requirements — 1398×2034 outer / 2007×2853 inner, both @3x, see
-the reference file): **Outer floor 678pt, Inner floor 951pt.** Use these as the
+the reference file): **Outer floor 678pt.** Use these as the
 minimum regardless of what width convention the project itself uses (most existing
 iOS screen libraries have their own established screen width, e.g. 393pt — don't
 force the width to match 466/669, only floor the *height*).
+
+**Inner floor for this project: 890pt** (set directly by the user, overriding the
+derived-from-screenshot-spec 951pt — the 951 figure is a reasonable estimate but
+this project's own call on the real minimum is 890; use 890, not 951, for every
+Inner screen in this project going forward). If starting a *different* project
+without this override, fall back to the derived 951pt figure, but always check
+whether the project has stated its own number first.
 
 - **If the screen's root frame is genuine Figma auto-layout** (`primaryAxisSizingMode:
   'AUTO'` and hugging): set `frame.minHeight = 678` (or `951`) directly — Figma's
