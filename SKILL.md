@@ -54,6 +54,51 @@ the rest of this skill tells you what happens to each bucket:
 7. **Full-bleed/background art** — hero images, gradient headers, non-interactive
    backgrounds.
 
+## Step 2.5 — Mandatory pre-build consistency check (re-read the real file, not memory)
+
+**Before building a single new screen for a new flow/sub-flow, re-read the actual
+current state of the most recently completed, structurally-similar flow already in
+the target project — don't rely on what a prior session, a skill note, or your own
+memory of the recipe says it looked like.** Users hand-edit shipped screens after
+the fact (adjusting a split ratio, hiding a redundant control, tightening a gap),
+and those edits are real, intentional, standing decisions — not drift to ignore.
+Confirmed on a real build: an Evaluations Split View originally built at a 278/418
+column split with a 24pt gap was later hand-edited (consistently, across all rows in
+that flow) to a 278/442 split with **zero** gap, and separately had each Detail
+Column's own (redundant) inline Back button set to `opacity: 0` rather than deleted
+— keeping its 40pt footprint so the title still centers via the existing
+`SPACE_BETWEEN` layout, while only the List/leftmost column's Back stays visible as
+the screen's single real back control. A new Chat flow built from memory of the
+*original* 278/418/24-gap recipe shipped inconsistent with this — caught only when
+the user pointed at the hand-edited screen directly and said to treat it as the
+reference. The fix touched all 10 of the new flow's merged-Inner frames (6 real
+Split Views + 4 modal screens whose background was itself a clone of the Split
+View) after the fact — expensive compared to just reading the real current state
+first.
+
+**Concretely, before starting a new flow:**
+1. Identify the most recently built flow using the same pattern (Split View, Tab-
+   pair merge, floating-card modal, etc.) — not necessarily the one a prior memory
+   note describes, but whichever is **currently selected or referenced by the user**,
+   or failing that, the newest one in the target section.
+2. Re-read its *actual* node tree in a fresh `use_figma`/`figma_execute` call —
+   exact widths, gaps, opacities, alignment — rather than trusting a skill note's
+   remembered numbers, which may describe an earlier, since-hand-edited version.
+3. If the user explicitly points at a specific screen ("take this screen as a
+   reference"), that screen's current state overrides any other source, including
+   this skill's own prior guidance — update the skill afterward if the convention
+   it encoded turns out to be stale.
+4. Apply the *current* numbers/structure to the new flow, and note in this skill
+   (or the project's memory log) that the convention changed, so the next flow
+   doesn't regress back to the stale recipe.
+
+This is not a one-off fix, it's a standing rule: **consistency is checked against
+the live file and against the most recent manual edits, every time, not against
+what this skill document says a pattern "normally" looks like.** Also check
+consistency against the original (pre-Duo) iOS screen being converted — the Duo
+version should never drift from the source design's content, copy, or information
+hierarchy, only its layout.
+
 ## Step 3 — Clone the source screens first, then convert the clones
 
 Before any Outer/Inner editing starts, **clone the full set of source screens for
@@ -430,6 +475,30 @@ one in a batch, and not just once at the end of a whole flow. A batch of otherwi
 identical screens has, in practice, had some pass and some fail the same check with
 no predictable pattern, so partial-batch verification (spot-checking the first row
 and assuming the rest match) is not sufficient.
+
+6. **Floating-icon color after extraction.** When an icon-only nav control is pulled
+   out of a non-standard-colored context (a dark/full-bleed screen like a media
+   viewer, where the icon was originally white-on-dark) into the project's standard
+   floating circle (white background), its vector fill must be explicitly recolored
+   to the standard dark icon color — cloning preserves the OLD fill, which renders
+   invisible (white-on-white) on the new background. Confirmed on a real build: an
+   Image viewer's Close/Download icons rendered as two blank white circles until
+   caught by screenshot and manually recolored. Re-screenshot after floating any icon
+   from a non-standard context and confirm it's actually visible, don't assume the
+   clone looks right.
+
+**Named rule — MAX-constrained children double-shift on `resize()`, don't compound it.**
+Any child with `constraints.vertical === 'MAX'` (a sticky bottom bar, composer, home
+indicator — anything meant to stay flush with the bottom edge) is **automatically**
+repositioned by Figma when the parent frame is resized, to preserve its bottom
+margin. If you then also manually add the same delta to that child's `y` (as if
+`resize()` hadn't touched it), you double the shift. This has recurred more than
+once on this project. The fix: after `frame.resize()`, either (a) don't touch the
+MAX-constrained child's position at all and just verify the auto-shifted result is
+correct, or (b) if you do need to set it, read the post-resize value first and set
+an **absolute target**, never `+=` a delta on top of it. A MIN-constrained sibling
+(e.g. a scrim/dim overlay, or a modal that isn't bottom-anchored) does NOT get this
+free auto-shift and still needs its position/size set manually after resize.
 
 ## Quick reference — what moves vs. what stays
 
