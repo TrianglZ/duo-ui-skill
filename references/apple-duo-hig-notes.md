@@ -17,7 +17,19 @@ first foldable iPhone, not Duo Mobile (2FA) or Duolingo.
 | App Store screenshot sizes | 1398×2034px (outer), 2007×2853px (inner) |
 | Screenshot requirement deadline | Mandatory from **April 2027** |
 | Poses | Flat (fully open, tablet-like), partially folded / book mode, tent/edge-standing, closed |
-| Derived logical-point screen size | **Outer 466×678pt, Inner 669×951pt** — back-calculated from the App Store screenshot pixel sizes above at an assumed @3x scale (both divide evenly: 1398/3=466, 2034/3=678, 2007/3=669, 2853/3=951). Not an official Apple-published number, just the cleanest consistent read of the screenshot spec — re-derive/confirm if Apple publishes an explicit points table later. Used as the minimum-height floor for screen frames (see `SKILL.md`'s "Frame height" section) even in projects whose own screen-width convention differs from 466/669. |
+| Derived logical-point screen size | **Outer 466×678pt, Inner 669×951pt** (portrait) / 951×669 (landscape, open flat) — originally back-calculated from the App Store screenshot pixel sizes above at an assumed @3x scale (1398/3=466, 2034/3=678, 2007/3=669, 2853/3=951); **since independently confirmed (Nov 2026 web research) as matching Apple's own official iOS 27 Figma UI Kit numbers exactly** — not just a plausible back-calculation, the real spec. Used as the minimum-height floor for screen frames (see `SKILL.md`'s "Frame height" section) even in projects whose own screen-width convention differs from 466/669. |
+
+**Figma's own built-in "iPhone Duo" frame preset is currently WRONG — do not use it.**
+As of Nov 2026, Figma ships a native "iPhone Duo, Open" frame preset sized
+**890×626**, which does not match Apple's own official iOS 27 Figma UI Kit (951×669
+landscape / 669×951 portrait) and appears to ignore the scaling iOS actually applies
+— a discrepancy independently reported on the Figma community forum. **This explains
+why this skill builds frames by hand (hugged-content-plus-floor) instead of
+instantiating a device-frame preset**: the preset that exists is not trustworthy.
+If a design asks "why not use the real Duo frame," the honest answer is: the real
+*numbers* are used (466×678 / 669×951, matching Apple's kit), just not via Figma's
+buggy built-in preset object — re-check this if revisiting the skill later, since
+Figma may ship a corrected preset after this is written.
 
 ## Size classes (the only two you design for)
 
